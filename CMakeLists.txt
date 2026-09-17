@@ -1,9 +1,21 @@
 cmake_minimum_required(VERSION 3.21)
 project(gitdatax VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+# C++23 jest potrzebne dla std::expected (GitResult<T>).
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# AddressSanitizer wykrywa wycieki i błędy pamięci: cmake --preset default -DGITDATAX_ENABLE_ASAN=ON
+option(GITDATAX_ENABLE_ASAN "Buduj z AddressSanitizer" OFF)
+if(GITDATAX_ENABLE_ASAN)
+    if(MSVC)
+        add_compile_options(/fsanitize=address)
+    else()
+        add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address)
+    endif()
+endif()
 
 # Zależności instaluje vcpkg w trybie manifestu (vcpkg.json).
 find_package(unofficial-git2 CONFIG REQUIRED)
