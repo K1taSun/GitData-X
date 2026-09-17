@@ -1,0 +1,13 @@
+build/
+cmake-build-*/
+out/
+bin/
+obj/
+vcpkg_installed/
+*.o
+*.obj
+*.exe
+.agent/
+.antigravityignore
+.vs/
+.vscode/
