@@ -22,4 +22,17 @@ GitError make_git_error(int code);
 // Zamienia kod zwrotny libgit2 (< 0 oznacza błąd) na GitResult<void>.
 GitResult<void> check_git_call(int code);
 
+// RAII dla globalnego stanu libgit2: init w konstruktorze, shutdown w destruktorze.
+// libgit2 liczy referencje, więc zagnieżdżone instancje są bezpieczne.
+// Kopiowanie jest zablokowane, bo każda kopia wywołałaby shutdown drugi raz.
+class GitLibInit {
+public:
+    // Rzuca std::runtime_error, bo bez zainicjowanej biblioteki dalsza praca nie ma sensu.
+    GitLibInit();
+    ~GitLibInit();
+
+    GitLibInit(const GitLibInit&) = delete;
+    GitLibInit& operator=(const GitLibInit&) = delete;
+};
+
 }  // namespace gitdatax::git

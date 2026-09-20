@@ -2,6 +2,7 @@
 
 #include <git2.h>
 
+#include <stdexcept>
 #include <utility>
 
 namespace gitdatax::git {
@@ -20,6 +21,19 @@ GitResult<void> check_git_call(int code) {
         return std::unexpected(make_git_error(code));
     }
     return {};
+}
+
+GitLibInit::GitLibInit() {
+    // git_libgit2_init zwraca liczbę aktywnych inicjalizacji albo wartość ujemną przy błędzie.
+    const int result = git_libgit2_init();
+    if (result < 0) {
+        throw std::runtime_error("git_libgit2_init zakonczylo sie bledem: " +
+                                 make_git_error(result).message);
+    }
+}
+
+GitLibInit::~GitLibInit() {
+    git_libgit2_shutdown();
 }
 
 }  // namespace gitdatax::git
