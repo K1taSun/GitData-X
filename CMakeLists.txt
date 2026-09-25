@@ -74,6 +74,7 @@ add_executable(gitdatax_tests
     tests/version_test.cpp
     tests/error_test.cpp
     tests/oid_test.cpp
+    tests/raii_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
