@@ -59,6 +59,13 @@ public:
     // Dzieci commitu (commity, które go wymieniają jako rodzica). Pusta lista dla nieznanego Oid.
     std::vector<git::Oid> children_of(const git::Oid& id) const;
 
+    // Sortowanie topologiczne algorytmem Kahna: każdy rodzic jest na liście przed dzieckiem.
+    // Wynik jest deterministyczny: gdy kilka commitów jest gotowych jednocześnie,
+    // wygrywa starszy czas commitera, a przy remisie mniejszy Oid.
+    // Nie polega na GIT_SORT_REVERSE z libgit2. Błędem (tekst) kończy się tylko cykl,
+    // którego prawidłowe repozytorium Gita nie zawiera.
+    std::expected<std::vector<git::Oid>, std::string> topological_sort_oldest_first() const;
+
 private:
     std::vector<CommitNode> commits_;
     std::vector<RefInfo> branches_;
