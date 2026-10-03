@@ -44,3 +44,4 @@ template <>
 struct std::hash<gitdatax::git::Oid> {
     std::size_t operator()(const gitdatax::git::Oid& oid) const noexcept;
 };
+

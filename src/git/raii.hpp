@@ -55,3 +55,4 @@ using TransactionPtr = std::unique_ptr<git_transaction, TransactionDeleter>;
 using ReferencePtr = std::unique_ptr<git_reference, ReferenceDeleter>;
 
 }  // namespace gitdatax::git
+
