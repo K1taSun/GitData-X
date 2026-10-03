@@ -156,3 +156,4 @@ TEST_CASE("Repo::open_from_cwd znajduje repozytorium w gore drzewa", "[git][repo
     REQUIRE(repo.has_value());
     REQUIRE(fs::equivalent(repo->git_dir(), dir.path() / ".git"));
 }
+

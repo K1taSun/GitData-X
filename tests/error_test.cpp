@@ -43,3 +43,4 @@ TEST_CASE("make_git_error ma komunikat zastepczy bez bledu libgit2", "[git][erro
     REQUIRE(error.code == -1);
     REQUIRE_FALSE(error.message.empty());
 }
+

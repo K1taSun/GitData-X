@@ -55,3 +55,4 @@ std::size_t std::hash<gitdatax::git::Oid>::operator()(
     std::memcpy(&value, oid.raw().id, sizeof(value));
     return value;
 }
+
