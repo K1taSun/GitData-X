@@ -45,6 +45,7 @@ add_library(gitdatax_core STATIC
     src/git/repo.cpp
     src/git/error.cpp
     src/git/oid.cpp
+    src/git/graph_loader.cpp
     src/git/commit.cpp
     src/git/in_memory_splitter.cpp
     src/git/transaction.cpp
