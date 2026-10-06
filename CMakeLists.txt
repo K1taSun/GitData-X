@@ -45,6 +45,7 @@ add_library(gitdatax_core STATIC
     src/git/repo.cpp
     src/git/error.cpp
     src/git/oid.cpp
+    src/git/graph_loader.cpp
     src/git/commit.cpp
     src/git/in_memory_splitter.cpp
     src/git/transaction.cpp
@@ -78,6 +79,7 @@ add_executable(gitdatax_tests
     tests/topological_sort_test.cpp
     tests/raii_test.cpp
     tests/repo_test.cpp
+    tests/graph_loader_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core

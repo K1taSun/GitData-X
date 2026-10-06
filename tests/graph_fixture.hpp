@@ -3,9 +3,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/commit_node.hpp"
+#include "core/dag_snapshot.hpp"
 #include "git/oid.hpp"
 
 namespace gitdatax::testing {
@@ -31,4 +33,20 @@ inline core::CommitNode make_node(unsigned int id, const std::vector<unsigned in
     return node;
 }
 
+// Sprawdza niezmiennik z dokumentacji: każdy rodzic stoi przed dzieckiem.
+inline bool every_parent_before_child(const core::DagSnapshot& snapshot,
+                                      const std::vector<git::Oid>& sorted) {
+    std::unordered_map<git::Oid, std::size_t> position;
+    for (std::size_t i = 0; i < sorted.size(); ++i) {
+        position[sorted[i]] = i;
+    }
+    for (const core::CommitNode& node : snapshot.commits()) {
+        for (const git::Oid& parent : node.parents) {
+            if (snapshot.contains(parent) && position.at(parent) >= position.at(node.id)) {
+                return false;
+            }
+        }
+    }
+    return sorted.size() == snapshot.size();
+}
 }  // namespace gitdatax::testing

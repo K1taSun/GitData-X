@@ -15,6 +15,7 @@ using gitdatax::core::CommitNode;
 using gitdatax::core::DagSnapshot;
 using gitdatax::core::HeadInfo;
 using gitdatax::git::Oid;
+using gitdatax::testing::every_parent_before_child;
 using gitdatax::testing::make_node;
 using gitdatax::testing::oid_from_number;
 
@@ -22,22 +23,6 @@ namespace {
 
 DagSnapshot make_snapshot(std::vector<CommitNode> nodes) {
     return DagSnapshot(std::move(nodes), {}, {}, HeadInfo{});
-}
-
-// Sprawdza niezmiennik z dokumentacji: każdy rodzic stoi przed dzieckiem.
-bool every_parent_before_child(const DagSnapshot& snapshot, const std::vector<Oid>& sorted) {
-    std::unordered_map<Oid, std::size_t> position;
-    for (std::size_t i = 0; i < sorted.size(); ++i) {
-        position[sorted[i]] = i;
-    }
-    for (const CommitNode& node : snapshot.commits()) {
-        for (const Oid& parent : node.parents) {
-            if (snapshot.contains(parent) && position.at(parent) >= position.at(node.id)) {
-                return false;
-            }
-        }
-    }
-    return sorted.size() == snapshot.size();
 }
 
 // Graf z rozwidleniami i 3 merge commitami (6, 9 i ośmiornicowy 11).
