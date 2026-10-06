@@ -79,6 +79,7 @@ add_executable(gitdatax_tests
     tests/topological_sort_test.cpp
     tests/raii_test.cpp
     tests/repo_test.cpp
+    tests/graph_loader_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
