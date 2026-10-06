@@ -42,3 +42,4 @@ struct CommitNode {
 };
 
 }  // namespace gitdatax::core
+

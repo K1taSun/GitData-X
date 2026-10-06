@@ -63,3 +63,4 @@ TEST_CASE("DagSnapshot toleruje rodzica spoza zrzutu", "[core][dag]") {
     REQUIRE(snapshot.size() == 1);
     REQUIRE(snapshot.find(oid_from_number(2))->parents.size() == 1);
 }
+
