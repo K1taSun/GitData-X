@@ -3,6 +3,7 @@
 #include <git2.h>
 
 #include <memory>
+#include <string>
 
 namespace gitdatax::git {
 
@@ -42,6 +43,12 @@ struct ReferenceDeleter {
     void operator()(git_reference* ptr) const noexcept { git_reference_free(ptr); }
 };
 
+struct ObjectDeleter {
+    void operator()(git_object* ptr) const noexcept { git_object_free(ptr); }
+};
+struct ReferenceIteratorDeleter {
+    void operator()(git_reference_iterator* ptr) const noexcept { git_reference_iterator_free(ptr); }
+};
 // unique_ptr (a nie shared_ptr): każdy uchwyt ma jednego właściciela, bez kosztu licznika.
 using RepositoryPtr = std::unique_ptr<git_repository, RepositoryDeleter>;
 using CommitPtr = std::unique_ptr<git_commit, CommitDeleter>;
@@ -53,6 +60,24 @@ using RevwalkPtr = std::unique_ptr<git_revwalk, RevwalkDeleter>;
 using SignaturePtr = std::unique_ptr<git_signature, SignatureDeleter>;
 using TransactionPtr = std::unique_ptr<git_transaction, TransactionDeleter>;
 using ReferencePtr = std::unique_ptr<git_reference, ReferenceDeleter>;
+
+using ObjectPtr = std::unique_ptr<git_object, ObjectDeleter>;
+using ReferenceIteratorPtr = std::unique_ptr<git_reference_iterator, ReferenceIteratorDeleter>;
+
+// git_buf trzyma pamięć alokowaną przez libgit2; destruktor zawsze ją zwalnia.
+class GitBuf {
+public:
+    GitBuf() = default;
+    ~GitBuf() { git_buf_dispose(&buf_); }
+    GitBuf(const GitBuf&) = delete;
+    GitBuf& operator=(const GitBuf&) = delete;
+
+    git_buf* get() { return &buf_; }
+    std::string to_string() const { return buf_.ptr == nullptr ? std::string() : std::string(buf_.ptr, buf_.size); }
+
+private:
+    git_buf buf_ = GIT_BUF_INIT;
+};
 
 }  // namespace gitdatax::git
 
