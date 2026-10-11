@@ -35,6 +35,7 @@ endfunction()
 # --- gitdatax_core: logika + warstwa libgit2, bez FTXUI (szybkie testy bez terminala) ---
 add_library(gitdatax_core STATIC
     src/core/version.cpp
+    src/core/time_utils.cpp
     src/core/dag_snapshot.cpp
     src/core/time_strategies.cpp
     src/core/commit_splitter.cpp
@@ -80,6 +81,7 @@ add_executable(gitdatax_tests
     tests/raii_test.cpp
     tests/repo_test.cpp
     tests/graph_loader_test.cpp
+    tests/time_utils_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
