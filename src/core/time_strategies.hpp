@@ -80,4 +80,24 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jit
     const RangeJitterConfig& config
 );
 
+// --- SPOSÓB 4: Mapowanie do okna godzin roboczych (Work-Hours Clamping) ---
+
+struct WorkHoursConfig {
+    int start_hour{9};                  // Domyślnie 09:00
+    int start_minute{0};
+    int end_hour{17};                   // Domyślnie 17:00
+    int end_minute{0};
+    std::int64_t step_min_sec{8 * 60};  // delta_min (np. 8m)
+    std::int64_t step_max_sec{25 * 60}; // delta_max (np. 25m)
+    std::uint64_t seed{1337};
+    DateTarget target{DateTarget::Both};
+};
+
+// Automatycznie przenosi commity nocne i weekendowe do okna godzin roboczych (np. Pn-Pt 09:00-17:00).
+// Obsługuje przepełnienie dnia (Day Overflow Protection) przenosząc nadmiarowe commity na poranek kolejnego dnia roboczego.
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hours(
+    const std::vector<CommitTimeInput>& commits,
+    const WorkHoursConfig& config
+);
+
 }  // namespace gitdatax::core

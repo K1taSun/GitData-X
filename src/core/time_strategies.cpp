@@ -182,4 +182,160 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jit
     return result;
 }
 
+namespace {
+
+// Pomocnik sprawdzający czy dany czas lokalny mieści się w zdefiniowanym oknie godzin roboczych.
+bool is_within_work_window(const DateTimeCivil& civil, int start_min, int end_min) {
+    if (civil.weekday == 6 || civil.weekday == 7) {
+        return false; // Weekend
+    }
+    const int minute_of_day = civil.hour * 60 + civil.minute;
+    return minute_of_day >= start_min && minute_of_day < end_min;
+}
+
+// Zwraca timestamp początku najbliższego dnia roboczego o godzinie start_hour:start_minute.
+std::int64_t next_work_day_start(const DateTimeCivil& from_civil_date, int start_hour, int start_minute, int tz_offset_min) {
+    DateTimeCivil next = from_civil_date;
+    next.hour = start_hour;
+    next.minute = start_minute;
+    next.second = 0;
+
+    // Przechodzimy do następnego dnia kalendarzowego
+    // Obliczamy timestamp obecnego dnia o godz. 00:00 i dodajemy 1 dzień (86400s)
+    std::int64_t next_day_ts = from_civil(DateTimeCivil{
+        .year = next.year, .month = next.month, .day = next.day,
+        .hour = 0, .minute = 0, .second = 0
+    }, tz_offset_min) + 86400;
+
+    DateTimeCivil next_day_civil = to_civil(next_day_ts, tz_offset_min);
+
+    // Jeśli trafiliśmy w sobotę (6) -> przeskocz do poniedziałku (+2 dni)
+    if (next_day_civil.weekday == 6) {
+        next_day_ts += 2 * 86400;
+        next_day_civil = to_civil(next_day_ts, tz_offset_min);
+    } else if (next_day_civil.weekday == 7) { // Niedziela -> poniedziałek (+1 dzień)
+        next_day_ts += 86400;
+        next_day_civil = to_civil(next_day_ts, tz_offset_min);
+    }
+
+    next_day_civil.hour = start_hour;
+    next_day_civil.minute = start_minute;
+    next_day_civil.second = 0;
+    return from_civil(next_day_civil, tz_offset_min);
+}
+
+// Rzutuje czas poza oknem na najbliższe okno robocze.
+std::int64_t clamp_to_work_window(std::int64_t ts, int tz_offset_min, int start_hour, int start_minute, int end_hour, int end_minute) {
+    const DateTimeCivil civil = to_civil(ts, tz_offset_min);
+    const int start_min = start_hour * 60 + start_minute;
+    const int end_min = end_hour * 60 + end_minute;
+
+    if (civil.weekday == 6) {
+        // Sobota -> Poniedziałek rano
+        const std::int64_t mon_ts = ts + 2 * 86400;
+        DateTimeCivil mon_civil = to_civil(mon_ts, tz_offset_min);
+        mon_civil.hour = start_hour;
+        mon_civil.minute = start_minute;
+        mon_civil.second = 0;
+        return from_civil(mon_civil, tz_offset_min);
+    }
+    if (civil.weekday == 7) {
+        // Niedziela -> Poniedziałek rano
+        const std::int64_t mon_ts = ts + 86400;
+        DateTimeCivil mon_civil = to_civil(mon_ts, tz_offset_min);
+        mon_civil.hour = start_hour;
+        mon_civil.minute = start_minute;
+        mon_civil.second = 0;
+        return from_civil(mon_civil, tz_offset_min);
+    }
+
+    // Dzień roboczy (Pn - Pt)
+    const int minute_of_day = civil.hour * 60 + civil.minute;
+    if (minute_of_day < start_min) {
+        // Przed rozpoczęciem pracy w tym samym dniu -> ustaw na otwarcie okna
+        DateTimeCivil adjusted = civil;
+        adjusted.hour = start_hour;
+        adjusted.minute = start_minute;
+        adjusted.second = 0;
+        return from_civil(adjusted, tz_offset_min);
+    }
+    if (minute_of_day >= end_min) {
+        // Po zakończeniu pracy -> przejdź na otwarcie kolejnego dnia roboczego
+        return next_work_day_start(civil, start_hour, start_minute, tz_offset_min);
+    }
+
+    return ts;
+}
+
+}  // namespace
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hours(
+    const std::vector<CommitTimeInput>& commits,
+    const WorkHoursConfig& config) {
+    if (commits.empty()) {
+        return std::vector<CommitDatePair>{};
+    }
+
+    const int start_min = config.start_hour * 60 + config.start_minute;
+    const int end_min = config.end_hour * 60 + config.end_minute;
+    if (start_min >= end_min) {
+        return std::unexpected("Poczatek okna roboczego musi byc wczesniejszy niz koniec");
+    }
+    if (config.step_min_sec <= 0 || config.step_max_sec < config.step_min_sec) {
+        return std::unexpected("Niepoprawny zakres kroku delta (step_min_sec > 0 oraz step_max_sec >= step_min_sec)");
+    }
+
+    std::mt19937_64 rng(config.seed);
+    std::uniform_int_distribution<std::int64_t> step_dist(config.step_min_sec, config.step_max_sec);
+
+    std::vector<CommitDatePair> result;
+    result.reserve(commits.size());
+
+    std::int64_t current_cursor = 0;
+
+    for (std::size_t i = 0; i < commits.size(); ++i) {
+        const auto& commit = commits[i];
+        const TimePoint orig_tp = (config.target == DateTarget::AuthorOnly)
+                                      ? commit.dates.author
+                                      : commit.dates.committer;
+        const int tz = orig_tp.tz_offset_min;
+
+        if (i == 0) {
+            // Pierwszy commit rzutujemy do okna roboczego
+            current_cursor = clamp_to_work_window(orig_tp.timestamp, tz,
+                                                  config.start_hour, config.start_minute,
+                                                  config.end_hour, config.end_minute);
+        } else {
+            const std::int64_t step = step_dist(rng);
+
+            // Jeśli oryginalny commit jest znacznie późniejszy niż bieżący kursor,
+            // próbujemy zachować naturalny postęp czasu, o ile mieści się w oknie.
+            if (orig_tp.timestamp > current_cursor + step) {
+                current_cursor = clamp_to_work_window(orig_tp.timestamp, tz,
+                                                      config.start_hour, config.start_minute,
+                                                      config.end_hour, config.end_minute);
+            } else {
+                current_cursor += step;
+            }
+
+            // Day Overflow Protection: sprawdzamy czy przekroczyliśmy godzinę końcową dnia
+            DateTimeCivil civil = to_civil(current_cursor, tz);
+            if (!is_within_work_window(civil, start_min, end_min)) {
+                // Przekroczenie okna roboczego: przenosimy na poranek kolejnego dnia roboczego
+                const std::int64_t next_start = next_work_day_start(civil, config.start_hour, config.start_minute, tz);
+                // Losowy mały offset w poranku nowego dnia
+                const std::int64_t morning_offset = (step % (15 * 60)); // max 15 minut po otwarciu
+                current_cursor = next_start + morning_offset;
+            }
+        }
+
+        CommitDatePair pair = commit.dates;
+        const TimePoint new_tp{.timestamp = current_cursor, .tz_offset_min = tz};
+        update_commit_dates(pair, new_tp, config.target);
+        result.push_back(pair);
+    }
+
+    return result;
+}
+
 }  // namespace gitdatax::core
