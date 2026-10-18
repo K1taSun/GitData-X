@@ -83,6 +83,7 @@ add_executable(gitdatax_tests
     tests/graph_loader_test.cpp
     tests/time_utils_test.cpp
     tests/time_strategies_1_3_test.cpp
+    tests/time_strategy_4_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
