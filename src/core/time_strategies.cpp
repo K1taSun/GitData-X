@@ -338,4 +338,67 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hour
     return result;
 }
 
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_sync_and_heal(
+    const std::vector<CommitTimeInput>& commits,
+    const Strategy5Config& config) {
+    if (config.auto_heal_dag_chronology && config.auto_heal_step_sec <= 0) {
+        return std::unexpected("Krok auto-heal musi byc scisle dodatni (> 0s)");
+    }
+
+    std::vector<CommitDatePair> result;
+    result.reserve(commits.size());
+
+    for (const auto& commit : commits) {
+        CommitDatePair pair = commit.dates;
+
+        // 1. Zmiana strefy czasowej
+        if (config.timezone_mode == TimezoneMode::PreserveInstantUtc) {
+            // Zachowujemy bezwzględną chwilę UTC, modyfikując jedynie etykietę strefy
+            pair.author.tz_offset_min = config.new_tz_offset_min;
+            pair.committer.tz_offset_min = config.new_tz_offset_min;
+        } else if (config.timezone_mode == TimezoneMode::PreserveClockTime) {
+            // Zachowujemy godzinę zegarową: t_new = t_old + (tz_old - tz_new) * 60
+            pair.author.timestamp += static_cast<std::int64_t>(pair.author.tz_offset_min - config.new_tz_offset_min) * 60;
+            pair.author.tz_offset_min = config.new_tz_offset_min;
+
+            pair.committer.timestamp += static_cast<std::int64_t>(pair.committer.tz_offset_min - config.new_tz_offset_min) * 60;
+            pair.committer.tz_offset_min = config.new_tz_offset_min;
+        }
+
+        // 2. DAG Chronology Auto-Heal: t'_i = max(parents) + step
+        if (config.auto_heal_dag_chronology && !commit.parent_dates.empty()) {
+            std::int64_t max_parent_time = 0;
+            bool found_parent = false;
+
+            for (const auto& p_tp : commit.parent_dates) {
+                const std::int64_t pt = p_tp.timestamp;
+                if (!found_parent || pt > max_parent_time) {
+                    max_parent_time = pt;
+                    found_parent = true;
+                }
+            }
+
+            if (found_parent) {
+                if (pair.committer.timestamp <= max_parent_time) {
+                    pair.committer.timestamp = max_parent_time + config.auto_heal_step_sec;
+                }
+                if (pair.author.timestamp <= max_parent_time) {
+                    pair.author.timestamp = max_parent_time + config.auto_heal_step_sec;
+                }
+            }
+        }
+
+        // 3. Synchronizacja par sygnatur
+        if (config.sync_mode == SignatureSyncMode::CommitterToAuthor) {
+            pair.committer = pair.author;
+        } else if (config.sync_mode == SignatureSyncMode::AuthorToCommitter) {
+            pair.author = pair.committer;
+        }
+
+        result.push_back(pair);
+    }
+
+    return result;
+}
+
 }  // namespace gitdatax::core

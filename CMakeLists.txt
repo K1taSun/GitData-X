@@ -84,6 +84,7 @@ add_executable(gitdatax_tests
     tests/time_utils_test.cpp
     tests/time_strategies_1_3_test.cpp
     tests/time_strategy_4_test.cpp
+    tests/time_strategy_5_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
