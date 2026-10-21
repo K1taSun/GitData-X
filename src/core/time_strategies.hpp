@@ -100,4 +100,33 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hour
     const WorkHoursConfig& config
 );
 
+// --- SPOSÓB 5: Synchronizacja par sygnatur, Auto-Heal chronologii DAG i strefy ---
+
+enum class SignatureSyncMode {
+    None,
+    CommitterToAuthor, // Committer = Author (usuwa ślady po amend / rebase)
+    AuthorToCommitter  // Author = Committer
+};
+
+enum class TimezoneMode {
+    None,
+    PreserveInstantUtc, // Zachowaj bezwzględną chwilę UTC (zmienia się tylko etykieta strefy)
+    PreserveClockTime   // Zachowaj godzinę zegarową (np. 14:00 pozostaje 14:00 w nowej strefie)
+};
+
+struct Strategy5Config {
+    SignatureSyncMode sync_mode{SignatureSyncMode::None};
+    bool auto_heal_dag_chronology{false};
+    std::int64_t auto_heal_step_sec{60}; // Domyślnie krok +60s po najpóźniejszym rodzicu
+    TimezoneMode timezone_mode{TimezoneMode::None};
+    int new_tz_offset_min{0};
+};
+
+// Zapewnia spójność sygnatur, naprawia topologiczne anomalie czasu (dziecko starsze od rodzica)
+// oraz umożliwia konwersję strefy czasowej.
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_sync_and_heal(
+    const std::vector<CommitTimeInput>& commits,
+    const Strategy5Config& config
+);
+
 }  // namespace gitdatax::core
