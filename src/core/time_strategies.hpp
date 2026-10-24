@@ -129,4 +129,34 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_sync_and_
     const Strategy5Config& config
 );
 
+// --- SPOSÓB 6: Odcinkowe losowe przesunięcie domykające do pełnej daty docelowej ---
+
+// Reprezentacja pojedynczego odcinka (sesji pracy) w strategii 6
+struct TimeSegment {
+    std::size_t start_index{0}; // Indeks pierwszego commitu w odcinku
+    std::size_t count{0};       // Liczba commitów w odcinku (L_m)
+    std::int64_t t_start{0};    // T_start^(m)
+    std::int64_t t_target{0};   // T_target^(m)
+};
+
+struct PiecewiseRandomConfig {
+    std::int64_t target_full_date{0};                 // T_target finalnej daty (ostatniego commitu)
+    std::int64_t delta_min_sec{5 * 60};               // Delta_min (np. 5 min = 300s)
+    std::int64_t delta_max_sec{35 * 60};              // Delta_max (np. 35 min = 2100s)
+    std::int64_t auto_session_gap_sec{6 * 3600};      // Próg sesji (np. 6h = 21600s) do automatycznego podziału
+    std::vector<std::size_t> manual_break_indices{};  // Ręczne punkty podziału [B] z TUI
+    std::vector<TimeSegment> explicit_segments{};     // Opcjonalne jawnie zdefiniowane odcinki z ramami czasowymi
+    std::uint64_t seed{1337};
+    std::optional<int> new_tz_offset_min{std::nullopt};
+    DateTarget target{DateTarget::Both};
+};
+
+// Dzieli commity na M odcinków i przesuwa commity za pomocą losowego kroku (Random Walk)
+// tak, aby ostatni commit odcinka (oraz finalnie cały ciąg) domknął się DOKŁADNIE
+// co do sekundy we wskazanej pełnej dacie docelowej T_target.
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise_random_to_target(
+    const std::vector<CommitTimeInput>& commits,
+    const PiecewiseRandomConfig& config
+);
+
 }  // namespace gitdatax::core
