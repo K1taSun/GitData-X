@@ -389,12 +389,174 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_sync_and_
         }
 
         // 3. Synchronizacja par sygnatur
-        if (config.sync_mode == SignatureSyncMode::CommitterToAuthor) {
-            pair.committer = pair.author;
-        } else if (config.sync_mode == SignatureSyncMode::AuthorToCommitter) {
-            pair.author = pair.committer;
+        result.push_back(pair);
+    }
+
+    return result;
+}
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise_random_to_target(
+    const std::vector<CommitTimeInput>& commits,
+    const PiecewiseRandomConfig& config) {
+    const std::size_t n = commits.size();
+    if (n == 0) {
+        return std::vector<CommitDatePair>{};
+    }
+
+    if (config.delta_min_sec <= 0 || config.delta_max_sec < config.delta_min_sec) {
+        return std::unexpected("Niepoprawne wartosci delta_min i delta_max (musza byc > 0 i max >= min)");
+    }
+
+    std::vector<TimeSegment> segments;
+
+    if (!config.explicit_segments.empty()) {
+        segments = config.explicit_segments;
+    } else {
+        // 1. Wyznaczenie punktów podziału na odcinki (manualne + progowe)
+        std::vector<std::size_t> break_indices;
+        for (const std::size_t b : config.manual_break_indices) {
+            if (b > 0 && b < n) {
+                break_indices.push_back(b);
+            }
         }
 
+        if (config.auto_session_gap_sec > 0) {
+            for (std::size_t i = 1; i < n; ++i) {
+                const std::int64_t gap = commits[i].dates.committer.timestamp -
+                                         commits[i - 1].dates.committer.timestamp;
+                if (gap > config.auto_session_gap_sec) {
+                    break_indices.push_back(i);
+                }
+            }
+        }
+
+        std::sort(break_indices.begin(), break_indices.end());
+        break_indices.erase(std::unique(break_indices.begin(), break_indices.end()), break_indices.end());
+
+        // Tworzenie segmentów
+        std::size_t cur_start = 0;
+        for (const std::size_t b : break_indices) {
+            segments.push_back(TimeSegment{
+                .start_index = cur_start,
+                .count = b - cur_start,
+                .t_start = 0,
+                .t_target = 0
+            });
+            cur_start = b;
+        }
+        segments.push_back(TimeSegment{
+            .start_index = cur_start,
+            .count = n - cur_start,
+            .t_start = 0,
+            .t_target = 0
+        });
+
+        // 2. Wyznaczenie granic czasowych odcinków
+        const std::int64_t avg_step = (config.delta_min_sec + config.delta_max_sec) / 2;
+        const std::size_t num_segments = segments.size();
+
+        // Ostatni odcinek kończy się dokładnie w target_full_date
+        segments.back().t_target = config.target_full_date;
+        if (segments.back().count > 1) {
+            segments.back().t_start = segments.back().t_target -
+                                      static_cast<std::int64_t>(segments.back().count) * avg_step;
+        } else {
+            segments.back().t_start = segments.back().t_target;
+        }
+
+        // Poprzedzające odcinki są układane wstecznie
+        for (std::size_t m = num_segments - 1; m > 0; --m) {
+            const std::int64_t inter_session_gap = std::max(static_cast<std::int64_t>(2 * 3600),
+                                                            config.auto_session_gap_sec);
+            segments[m - 1].t_target = segments[m].t_start - inter_session_gap;
+            if (segments[m - 1].count > 1) {
+                segments[m - 1].t_start = segments[m - 1].t_target -
+                                          static_cast<std::int64_t>(segments[m - 1].count) * avg_step;
+            } else {
+                segments[m - 1].t_start = segments[m - 1].t_target;
+            }
+        }
+    }
+
+    // Walidacja poprawności granic odcinków
+    for (const auto& seg : segments) {
+        if (seg.count > 1 && seg.t_target < seg.t_start + static_cast<std::int64_t>(seg.count - 1)) {
+            return std::unexpected("Niewystarczajacy przedzial czasowy w odcinku na pomieszczenie commitow z krokiem 1s");
+        }
+    }
+
+    std::mt19937_64 rng(config.seed);
+    std::uniform_real_distribution<double> step_dist(static_cast<double>(config.delta_min_sec),
+                                                     static_cast<double>(config.delta_max_sec));
+
+    std::vector<std::int64_t> result_timestamps(n, 0);
+
+    // 3. Generowanie losowych przesunięć i normalizacja domykająca (Random Walk z wagami)
+    for (const auto& seg : segments) {
+        const std::size_t L_m = seg.count;
+        if (L_m == 0) continue;
+
+        if (L_m == 1) {
+            result_timestamps[seg.start_index] = seg.t_target;
+        } else {
+            std::vector<double> steps(L_m);
+            double total_sum = 0.0;
+            for (std::size_t j = 0; j < L_m; ++j) {
+                steps[j] = step_dist(rng);
+                total_sum += steps[j];
+            }
+
+            double cumulative = 0.0;
+            const double total_span = static_cast<double>(seg.t_target - seg.t_start);
+
+            for (std::size_t j = 0; j < L_m; ++j) {
+                cumulative += steps[j];
+                const double weight = cumulative / total_sum; // Dla j = L_m - 1 waga wynosi DOKŁADNIE 1.0!
+
+                if (j == L_m - 1) {
+                    result_timestamps[seg.start_index + j] = seg.t_target;
+                } else {
+                    const std::int64_t calculated = seg.t_start + static_cast<std::int64_t>(weight * total_span);
+                    result_timestamps[seg.start_index + j] = calculated;
+                }
+            }
+
+            // Gwarancja ścisłej monotoniczności: t'_{m,j} >= t'_{m,j-1} + 1
+            for (std::size_t j = 1; j < L_m; ++j) {
+                const std::size_t idx = seg.start_index + j;
+                if (result_timestamps[idx] <= result_timestamps[idx - 1]) {
+                    result_timestamps[idx] = result_timestamps[idx - 1] + 1;
+                }
+            }
+
+            // Domykanie do T_target: ostatni commit MUSI mieć dokładnie seg.t_target
+            const std::size_t last_idx = seg.start_index + L_m - 1;
+            result_timestamps[last_idx] = seg.t_target;
+
+            // Korekta wsteczna na wypadek gdyby monotoniczny clamp dopchnął do granicy
+            for (std::size_t j = L_m - 1; j > 0; --j) {
+                const std::size_t idx = seg.start_index + j;
+                if (result_timestamps[idx - 1] >= result_timestamps[idx]) {
+                    result_timestamps[idx - 1] = result_timestamps[idx] - 1;
+                }
+            }
+        }
+    }
+
+    std::vector<CommitDatePair> result;
+    result.reserve(n);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        CommitDatePair pair = commits[i].dates;
+        const int tz_author = config.new_tz_offset_min.value_or(pair.author.tz_offset_min);
+        const int tz_committer = config.new_tz_offset_min.value_or(pair.committer.tz_offset_min);
+
+        const TimePoint new_tp{
+            .timestamp = result_timestamps[i],
+            .tz_offset_min = (config.target == DateTarget::AuthorOnly) ? tz_author : tz_committer
+        };
+
+        update_commit_dates(pair, new_tp, config.target);
         result.push_back(pair);
     }
 
