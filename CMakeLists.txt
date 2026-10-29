@@ -87,6 +87,7 @@ add_executable(gitdatax_tests
     tests/time_strategy_5_test.cpp
     tests/time_strategy_6_test.cpp
     tests/dag_verifier_test.cpp
+    tests/backup_manager_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
