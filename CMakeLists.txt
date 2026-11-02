@@ -89,6 +89,7 @@ add_executable(gitdatax_tests
     tests/dag_verifier_test.cpp
     tests/backup_manager_test.cpp
     tests/commit_writer_test.cpp
+    tests/transaction_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
