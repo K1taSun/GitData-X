@@ -91,6 +91,7 @@ add_executable(gitdatax_tests
     tests/commit_writer_test.cpp
     tests/transaction_test.cpp
     tests/in_memory_splitter_test.cpp
+    tests/commit_splitter_test.cpp
 )
 target_link_libraries(gitdatax_tests PRIVATE
     gitdatax_core
