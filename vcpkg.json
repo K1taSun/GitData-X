@@ -1,0 +1,11 @@
+{
+  "name": "gitdatax",
+  "version": "0.1.0",
+  "builtin-baseline": "e54ef0fcc9a82033a61e51002552a910a5d57282",
+  "dependencies": [
+    "libgit2",
+    "ftxui",
+    "catch2",
+    "rapidcheck"
+  ]
+}
