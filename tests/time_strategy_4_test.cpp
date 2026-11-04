@@ -127,3 +127,4 @@ TEST_CASE("Sposob 4: Walidacja niepoprawnej konfiguracji", "[core][time_strategy
     };
     REQUIRE_FALSE(apply_strategy_work_hours({make_commit_at(2026, 11, 11, 12, 0)}, bad_step).has_value());
 }
+

@@ -162,3 +162,4 @@ TEST_CASE("DagVerifier: Wykrywanie bledu izomorfizmu rodzicow", "[core][verifier
     REQUIRE_FALSE(res.has_value());
     REQUIRE(res.error().invariant_name == "Izomorfizm krawedzi zewnetrznych");
 }
+

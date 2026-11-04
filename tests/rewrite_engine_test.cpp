@@ -190,3 +190,4 @@ TEST_CASE("RewriteEngine: Rozbicie commitu 1 -> K (Split) i sprawdzenie stanu dr
     REQUIRE_FALSE(fs::exists(dir.path() / "include"));
     REQUIRE_FALSE(fs::exists(dir.path() / "src"));
 }
+

@@ -136,3 +136,4 @@ TEST_CASE("Kalendarz: RapidCheck roundtrip to_civil i from_civil", "[core][time]
     });
     REQUIRE(passed);
 }
+

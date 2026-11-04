@@ -54,3 +54,4 @@ std::string format_iso8601(const TimePoint& tp);
 std::expected<std::int64_t, std::string> parse_duration_delta(std::string_view text);
 
 }  // namespace gitdatax::core
+

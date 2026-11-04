@@ -184,3 +184,4 @@ TEST_CASE("Sposob 3: RapidCheck weryfikacja monotonicznosci", "[core][time_strat
     });
     REQUIRE(passed);
 }
+

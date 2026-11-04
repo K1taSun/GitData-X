@@ -161,3 +161,4 @@ TEST_CASE("Sposob 6: RapidCheck weryfikacja domykania i monotonicznosci", "[core
     });
     REQUIRE(passed);
 }
+

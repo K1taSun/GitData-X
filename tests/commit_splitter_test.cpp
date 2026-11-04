@@ -92,3 +92,4 @@ TEST_CASE("CommitSplitter: Semantyczny podzial (naglowki -> kod -> testy)", "[co
     // Krok 3: Testy
     REQUIRE(plan->steps[2].completed_files.front().path == "tests/db_test.cpp");
 }
+

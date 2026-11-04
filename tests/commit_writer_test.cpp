@@ -109,3 +109,4 @@ TEST_CASE("CommitWriter: Zapis commitu bezposrednio do ODB", "[git][commit]") {
         REQUIRE(Oid(*git_commit_parent_id(read_merge, 1)) == r2);
     }
 }
+

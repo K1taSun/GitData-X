@@ -117,3 +117,4 @@ TEST_CASE("RefTransaction: Atomowa aktualizacja galezi i Detached HEAD", "[git][
         REQUIRE(Oid(head_id) == c3);
     }
 }
+

@@ -159,3 +159,4 @@ TEST_CASE("BackupManager: Obsluga stanu Detached HEAD", "[core][backup]") {
     REQUIRE(git_reference_name_to_id(&head_target, repo->handle(), "HEAD") == 0);
     REQUIRE(Oid(head_target) == c1);
 }
+

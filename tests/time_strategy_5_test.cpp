@@ -135,3 +135,4 @@ TEST_CASE("Sposob 5: DAG Chronology Auto-Heal", "[core][time_strategy][sync_heal
         REQUIRE_FALSE(apply_strategy_sync_and_heal({make_input_pair(100, 0, 100, 0)}, cfg).has_value());
     }
 }
+

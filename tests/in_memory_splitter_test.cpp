@@ -124,3 +124,4 @@ TEST_CASE("InMemorySplitter: Bezdotykowa synteza drzew posrednich w RAM", "[git]
     REQUIRE_FALSE(fs::exists(dir.path() / "a.txt"));
     REQUIRE_FALSE(fs::exists(dir.path() / "b.txt"));
 }
+
