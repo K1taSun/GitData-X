@@ -19,6 +19,22 @@ enum class DateTarget {
     Both
 };
 
+// Flagi celu modyfikacji wymagane przez wspólny interfejs strategii ITimeStrategy.
+enum class TimeTargetFlag {
+    ModifyAuthor,
+    ModifyCommitter,
+    SyncBoth
+};
+
+constexpr DateTarget to_date_target(TimeTargetFlag flag) noexcept {
+    switch (flag) {
+        case TimeTargetFlag::ModifyAuthor: return DateTarget::AuthorOnly;
+        case TimeTargetFlag::ModifyCommitter: return DateTarget::CommitterOnly;
+        case TimeTargetFlag::SyncBoth: return DateTarget::Both;
+    }
+    return DateTarget::Both;
+}
+
 // Para znaczników czasu dla pojedynczego commitu.
 struct CommitDatePair {
     TimePoint author;
@@ -33,6 +49,20 @@ struct CommitTimeInput {
     git::Oid id;
     CommitDatePair dates;
     std::vector<TimePoint> parent_dates; // Główna data rodzica (np. committer timestamp)
+};
+
+// Wspólny interfejs dla wszystkich 6 strategii transformacji dat commitów.
+// Przyjmuje jawny generator std::mt19937_64 oraz flagę celu, co gwarantuje
+// deterministyczność losowań i umożliwia jednolite wywoływanie strategii.
+class ITimeStrategy {
+public:
+    virtual ~ITimeStrategy() = default;
+
+    [[nodiscard]] virtual std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const = 0;
 };
 
 // --- SPOSÓB 1: Data bezwzględna lub ze wzorca względnego ---
@@ -144,6 +174,7 @@ struct PiecewiseRandomConfig {
     std::int64_t delta_min_sec{5 * 60};               // Delta_min (np. 5 min = 300s)
     std::int64_t delta_max_sec{35 * 60};              // Delta_max (np. 35 min = 2100s)
     std::int64_t auto_session_gap_sec{6 * 3600};      // Próg sesji (np. 6h = 21600s) do automatycznego podziału
+    bool split_by_day{false};                         // Podział na odcinki przy zmianie dnia kalendarzowego
     std::vector<std::size_t> manual_break_indices{};  // Ręczne punkty podziału [B] z TUI
     std::vector<TimeSegment> explicit_segments{};     // Opcjonalne jawnie zdefiniowane odcinki z ramami czasowymi
     std::uint64_t seed{1337};
@@ -158,5 +189,92 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise
     const std::vector<CommitTimeInput>& commits,
     const PiecewiseRandomConfig& config
 );
+
+// --- Obiektowe wrappery implementujące wspólny interfejs ITimeStrategy ---
+
+class AbsolutePresetStrategy final : public ITimeStrategy {
+public:
+    explicit AbsolutePresetStrategy(const TimePoint& new_time);
+    explicit AbsolutePresetStrategy(const ParsedPreset& preset);
+
+    [[nodiscard]] std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const override;
+
+private:
+    ParsedPreset preset_;
+};
+
+class ConstantDeltaShiftStrategy final : public ITimeStrategy {
+public:
+    explicit ConstantDeltaShiftStrategy(std::int64_t delta_seconds);
+
+    [[nodiscard]] std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const override;
+
+private:
+    std::int64_t delta_seconds_{0};
+};
+
+class RangeJitterStrategy final : public ITimeStrategy {
+public:
+    explicit RangeJitterStrategy(RangeJitterConfig config);
+
+    [[nodiscard]] std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const override;
+
+private:
+    RangeJitterConfig config_;
+};
+
+class WorkHoursStrategy final : public ITimeStrategy {
+public:
+    explicit WorkHoursStrategy(WorkHoursConfig config);
+
+    [[nodiscard]] std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const override;
+
+private:
+    WorkHoursConfig config_;
+};
+
+class SyncAndHealStrategy final : public ITimeStrategy {
+public:
+    explicit SyncAndHealStrategy(Strategy5Config config);
+
+    [[nodiscard]] std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const override;
+
+private:
+    Strategy5Config config_;
+};
+
+class PiecewiseRandomStrategy final : public ITimeStrategy {
+public:
+    explicit PiecewiseRandomStrategy(PiecewiseRandomConfig config);
+
+    [[nodiscard]] std::expected<std::vector<CommitDatePair>, std::string> apply(
+        const std::vector<CommitTimeInput>& commits,
+        std::mt19937_64& rng,
+        TimeTargetFlag target = TimeTargetFlag::SyncBoth
+    ) const override;
+
+private:
+    PiecewiseRandomConfig config_;
+};
 
 }  // namespace gitdatax::core
