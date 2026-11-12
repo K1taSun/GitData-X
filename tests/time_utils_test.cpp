@@ -137,3 +137,78 @@ TEST_CASE("Kalendarz: RapidCheck roundtrip to_civil i from_civil", "[core][time]
     REQUIRE(passed);
 }
 
+TEST_CASE("ISO-8601 i kalendarz: walidacja lat przestepnych oraz ogonowych znakow", "[core][time]") {
+    REQUIRE(days_in_month(2024, 2) == 29);
+    REQUIRE(days_in_month(2025, 2) == 28);
+    REQUIRE(days_in_month(1900, 2) == 28);
+    REQUIRE(days_in_month(2000, 2) == 29);
+    REQUIRE(days_in_month(2026, 4) == 30);
+
+    REQUIRE(parse_iso8601("2024-02-29 12:00:00 +0100").has_value());
+    REQUIRE_FALSE(parse_iso8601("2025-02-29 12:00:00 +0100").has_value());
+    REQUIRE_FALSE(parse_iso8601("2026-04-31 12:00:00Z").has_value());
+    REQUIRE_FALSE(parse_iso8601("2026-11-10xyz").has_value());
+}
+
+TEST_CASE("Naturalny parser presetow: now, yesterday, parent i ISO-8601", "[core][time]") {
+    const auto now_parsed = parse_iso8601("2026-11-10 15:30:00 +0100");
+    REQUIRE(now_parsed.has_value());
+    const TimePoint now_ref = *now_parsed;
+
+    SECTION("Slowo kluczowe now") {
+        const auto p = parse_natural_preset("  NOW ", now_ref);
+        REQUIRE(p.has_value());
+        REQUIRE_FALSE(p->relative_to_parent);
+        REQUIRE(p->absolute_time == now_ref);
+    }
+
+    SECTION("Wyrazenie yesterday HH:MM oraz yesterday HH:MM:SS") {
+        const auto p = parse_natural_preset("yesterday 09:45", now_ref);
+        REQUIRE(p.has_value());
+        REQUIRE_FALSE(p->relative_to_parent);
+        const DateTimeCivil civil = to_civil(p->absolute_time.timestamp, p->absolute_time.tz_offset_min);
+        REQUIRE(civil.year == 2026);
+        REQUIRE(civil.month == 11);
+        REQUIRE(civil.day == 9);
+        REQUIRE(civil.hour == 9);
+        REQUIRE(civil.minute == 45);
+        REQUIRE(civil.second == 0);
+
+        const auto p_sec = parse_natural_preset("yesterday 21:10:05", now_ref);
+        REQUIRE(p_sec.has_value());
+        const DateTimeCivil civil_sec = to_civil(p_sec->absolute_time.timestamp, p_sec->absolute_time.tz_offset_min);
+        REQUIRE(civil_sec.day == 9);
+        REQUIRE(civil_sec.hour == 21);
+        REQUIRE(civil_sec.minute == 10);
+        REQUIRE(civil_sec.second == 5);
+    }
+
+    SECTION("Wyrazenia wzgledne parent + Xm / parent - Xh") {
+        const auto p1 = parse_natural_preset("parent + 15m", now_ref);
+        REQUIRE(p1.has_value());
+        REQUIRE(p1->relative_to_parent);
+        REQUIRE(p1->parent_offset_sec == 900);
+
+        const auto p2 = parse_natural_preset("parent - 2h 30m", now_ref);
+        REQUIRE(p2.has_value());
+        REQUIRE(p2->relative_to_parent);
+        REQUIRE(p2->parent_offset_sec == -9000);
+
+        const auto p3 = parse_natural_preset("parent", now_ref);
+        REQUIRE(p3.has_value());
+        REQUIRE(p3->relative_to_parent);
+        REQUIRE(p3->parent_offset_sec == 0);
+    }
+
+    SECTION("Fallback do ISO-8601 i odrzucanie bledow") {
+        const auto iso = parse_natural_preset("2026-11-01T10:00:00Z", now_ref);
+        REQUIRE(iso.has_value());
+        REQUIRE_FALSE(iso->relative_to_parent);
+
+        REQUIRE_FALSE(parse_natural_preset("", now_ref).has_value());
+        REQUIRE_FALSE(parse_natural_preset("yesterday 25:00", now_ref).has_value());
+        REQUIRE_FALSE(parse_natural_preset("yesterday foo", now_ref).has_value());
+        REQUIRE_FALSE(parse_natural_preset("parental + 5m", now_ref).has_value());
+    }
+}
+

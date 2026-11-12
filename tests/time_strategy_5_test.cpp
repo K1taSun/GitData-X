@@ -134,5 +134,23 @@ TEST_CASE("Sposob 5: DAG Chronology Auto-Heal", "[core][time_strategy][sync_heal
         };
         REQUIRE_FALSE(apply_strategy_sync_and_heal({make_input_pair(100, 0, 100, 0)}, cfg).has_value());
     }
+
+    SECTION("Wywolanie SyncAndHealStrategy przez interfejs ITimeStrategy synchronizuje pary po naprawie") {
+        const TimePoint parent_tp{.timestamp = 1500, .tz_offset_min = 60};
+        const auto commit = make_input_pair(1000, 60, 2000, 120, {parent_tp});
+
+        const SyncAndHealStrategy strategy(Strategy5Config{
+            .sync_mode = SignatureSyncMode::CommitterToAuthor,
+            .auto_heal_dag_chronology = true,
+            .auto_heal_step_sec = 30
+        });
+        const ITimeStrategy& iface = strategy;
+        std::mt19937_64 rng(99);
+
+        const auto res = iface.apply({commit}, rng, TimeTargetFlag::SyncBoth);
+        REQUIRE(res.has_value());
+        REQUIRE((*res)[0].author.timestamp == 1530);
+        REQUIRE((*res)[0].committer == (*res)[0].author);
+    }
 }
 

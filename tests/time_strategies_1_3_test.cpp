@@ -185,3 +185,59 @@ TEST_CASE("Sposob 3: RapidCheck weryfikacja monotonicznosci", "[core][time_strat
     REQUIRE(passed);
 }
 
+TEST_CASE("Interfejs ITimeStrategy: polimorficzne wywolania dla Trybow 1-3", "[core][time_strategy]") {
+    const std::vector<CommitTimeInput> commits = {
+        make_input(1000, 1000, 60, 100),
+        make_input(2000, 2000, 60, 1000),
+        make_input(3000, 3000, 60, 2000)
+    };
+
+    SECTION("AbsolutePresetStrategy z presetem parent + Xm i flaga ModifyAuthor") {
+        const auto preset = parse_natural_preset("parent + 5m", TimePoint{.timestamp = 5000, .tz_offset_min = 60});
+        REQUIRE(preset.has_value());
+
+        const AbsolutePresetStrategy strategy(*preset);
+        const ITimeStrategy& iface = strategy;
+        std::mt19937_64 rng(42);
+
+        const auto res = iface.apply(commits, rng, TimeTargetFlag::ModifyAuthor);
+        REQUIRE(res.has_value());
+        REQUIRE((*res)[0].author.timestamp == 100 + 300);
+        REQUIRE((*res)[0].committer.timestamp == 1000);
+        REQUIRE((*res)[1].author.timestamp == 1000 + 300);
+        REQUIRE((*res)[2].author.timestamp == 2000 + 300);
+    }
+
+    SECTION("ConstantDeltaShiftStrategy z flaga ModifyCommitter") {
+        const ConstantDeltaShiftStrategy strategy(3600);
+        const ITimeStrategy& iface = strategy;
+        std::mt19937_64 rng(42);
+
+        const auto res = iface.apply(commits, rng, TimeTargetFlag::ModifyCommitter);
+        REQUIRE(res.has_value());
+        REQUIRE((*res)[0].author.timestamp == 1000);
+        REQUIRE((*res)[0].committer.timestamp == 4600);
+        REQUIRE((*res)[2].committer.timestamp == 6600);
+    }
+
+    SECTION("RangeJitterStrategy deterministycznie wykorzystuje przekazany std::mt19937_64") {
+        const RangeJitterStrategy strategy(RangeJitterConfig{
+            .t_start = 10000,
+            .t_end = 20000
+        });
+        const ITimeStrategy& iface = strategy;
+
+        std::mt19937_64 rng1(777);
+        std::mt19937_64 rng2(777);
+        const auto res1 = iface.apply(commits, rng1, TimeTargetFlag::SyncBoth);
+        const auto res2 = iface.apply(commits, rng2, TimeTargetFlag::SyncBoth);
+
+        REQUIRE(res1.has_value());
+        REQUIRE(res2.has_value());
+        REQUIRE(*res1 == *res2);
+        REQUIRE((*res1)[0].author == (*res1)[0].committer);
+        REQUIRE((*res1)[1].committer.timestamp > (*res1)[0].committer.timestamp);
+        REQUIRE((*res1)[2].committer.timestamp > (*res1)[1].committer.timestamp);
+    }
+}
+
