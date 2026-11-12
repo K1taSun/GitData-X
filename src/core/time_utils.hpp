@@ -42,6 +42,9 @@ constexpr bool is_leap_year(int year) noexcept {
 // Zwraca true jeśli data w lokalnej strefie wypada w weekend (Sobota lub Niedziela).
 bool is_weekend(std::int64_t timestamp_utc, int tz_offset_min);
 
+// Liczba dni w podanym miesiącu kalendarzowym z uwzględnieniem lat przestępnych.
+int days_in_month(int year, int month);
+
 // Parsowanie formatu ISO-8601 (np. "2026-11-10 18:30:00 +0100" lub "2026-11-10T18:30:00Z").
 // std::string_view pozwala na odczyt tekstu bez zbędnej alokacji pamięci na stercie.
 std::expected<TimePoint, std::string> parse_iso8601(std::string_view text);
@@ -52,6 +55,21 @@ std::string format_iso8601(const TimePoint& tp);
 // Parsowanie delty czasu, np. "+2d 4h 30m", "-3h 15m 10s", "+1w".
 // Zwraca różnicę w sekundach (dodatnią lub ujemną).
 std::expected<std::int64_t, std::string> parse_duration_delta(std::string_view text);
+
+// Wynik parsowania presetu daty: albo konkretny czas bezwzględny,
+// albo przesunięcie liczone względem rodzica każdego z modyfikowanych commitów.
+struct ParsedPreset {
+    bool relative_to_parent{false};
+    std::int64_t parent_offset_sec{0};
+    TimePoint absolute_time{};
+
+    bool operator==(const ParsedPreset&) const = default;
+};
+
+// Parsuje wyrażenia naturalne dla Trybu 1: "now", "yesterday HH:MM[:SS]",
+// "parent [+|- <delta>]" (np. "parent + 15m") oraz standardowe ciągi ISO-8601.
+std::expected<ParsedPreset, std::string> parse_natural_preset(std::string_view expr,
+                                                              const TimePoint& now_ref);
 
 }  // namespace gitdatax::core
 

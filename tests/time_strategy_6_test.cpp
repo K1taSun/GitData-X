@@ -162,3 +162,49 @@ TEST_CASE("Sposob 6: RapidCheck weryfikacja domykania i monotonicznosci", "[core
     REQUIRE(passed);
 }
 
+TEST_CASE("Sposob 6: Podzial dzienny split_by_day, walidacja odcinkow oraz ITimeStrategy", "[core][time_strategy][piecewise]") {
+    const auto day1_a = parse_iso8601("2026-11-10 10:00:00 +0100");
+    const auto day1_b = parse_iso8601("2026-11-10 10:20:00 +0100");
+    // Różnica tylko 2h (poniżej auto_session_gap_sec = 6h), ale przekracza północ -> nowy dzień!
+    const auto day2_a = parse_iso8601("2026-11-11 00:15:00 +0100");
+    const auto day2_b = parse_iso8601("2026-11-11 00:40:00 +0100");
+    const auto target_tp = parse_iso8601("2026-11-12 18:00:00 +0100");
+    REQUIRE(day1_a.has_value());
+    REQUIRE(day1_b.has_value());
+    REQUIRE(day2_a.has_value());
+    REQUIRE(day2_b.has_value());
+    REQUIRE(target_tp.has_value());
+
+    const std::vector<CommitTimeInput> commits = {
+        make_commit_ts(day1_a->timestamp, 60),
+        make_commit_ts(day1_b->timestamp, 60),
+        make_commit_ts(day2_a->timestamp, 60),
+        make_commit_ts(day2_b->timestamp, 60)
+    };
+
+    const PiecewiseRandomStrategy strategy(PiecewiseRandomConfig{
+        .target_full_date = target_tp->timestamp,
+        .delta_min_sec = 300,
+        .delta_max_sec = 900,
+        .auto_session_gap_sec = 6 * 3600,
+        .split_by_day = true
+    });
+    const ITimeStrategy& iface = strategy;
+    std::mt19937_64 rng(555);
+
+    const auto res = iface.apply(commits, rng, TimeTargetFlag::SyncBoth);
+    REQUIRE(res.has_value());
+    REQUIRE(res->size() == 4);
+    REQUIRE(res->back().committer.timestamp == target_tp->timestamp);
+    // Między dniem 1 (indeks 1) a dniem 2 (indeks 2) musi powstać wyraźna przerwa międzysesyjna (>= 6h)
+    REQUIRE((*res)[2].committer.timestamp - (*res)[1].committer.timestamp >= 6 * 3600);
+
+    // Walidacja wyjścia poza zakres w explicit_segments
+    PiecewiseRandomConfig bad_seg{
+        .explicit_segments = {
+            TimeSegment{.start_index = 2, .count = 5, .t_start = 1000, .t_target = 5000}
+        }
+    };
+    REQUIRE_FALSE(apply_strategy_piecewise_random_to_target(commits, bad_seg).has_value());
+}
+

@@ -93,6 +93,17 @@ bool is_weekend(std::int64_t timestamp_utc, int tz_offset_min) {
     return civil.weekday == 6 || civil.weekday == 7; // Sobota lub Niedziela
 }
 
+int days_in_month(int year, int month) {
+    static constexpr int kDaysPerMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month < 1 || month > 12) {
+        return 0;
+    }
+    if (month == 2 && is_leap_year(year)) {
+        return 29;
+    }
+    return kDaysPerMonth[month - 1];
+}
+
 std::expected<TimePoint, std::string> parse_iso8601(std::string_view text) {
     text = trim(text);
     if (text.empty()) {
@@ -102,47 +113,53 @@ std::expected<TimePoint, std::string> parse_iso8601(std::string_view text) {
     int y = 0, m = 0, d = 0, h = 0, min = 0, s = 0;
     int tz_sign = 1;
     int tz_h = 0, tz_m = 0;
-    bool has_time = false;
     bool has_tz = false;
 
-    // Konwersja na string do bezpiecznego skanowania sscanf_s
     std::string s_text(text);
     const char* c_str = s_text.c_str();
+    const int expected_len = static_cast<int>(s_text.size());
 
-    // 1. Sprawdzamy pełny format: "YYYY-MM-DD HH:MM:SS +HHMM" lub z dwukropkiem w strefie
-    int matched = 0;
+    int consumed = 0;
     char sep = ' ';
     char tz_s = '+';
+    char z_char = '\0';
 
-    if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d %c%2d%2d",
-                    &y, &m, &d, &sep, &h, &min, &s, &tz_s, &tz_h, &tz_m) == 10) {
-        has_time = true;
+    const auto valid_sep = [](char c) { return c == ' ' || c == 'T' || c == 't'; };
+    const auto valid_tz_sign = [](char c) { return c == '+' || c == '-'; };
+
+    // 1. Sprawdzamy pełny format z przesunięciem strefy (z dwukropkiem lub bez) oraz końcowy indeks %n,
+    // aby odrzucić nadmiarowe znaki na końcu ciągu.
+    if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d %c%2d%2d%n",
+                    &y, &m, &d, &sep, &h, &min, &s, &tz_s, &tz_h, &tz_m, &consumed) == 10 &&
+        consumed == expected_len && valid_sep(sep) && valid_tz_sign(tz_s)) {
         has_tz = true;
         tz_sign = (tz_s == '-') ? -1 : 1;
-    } else if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d%c%2d:%2d",
-                           &y, &m, &d, &sep, &h, &min, &s, &tz_s, &tz_h, &tz_m) == 10) {
-        has_time = true;
+    } else if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d %c%2d:%2d%n",
+                           &y, &m, &d, &sep, &h, &min, &s, &tz_s, &tz_h, &tz_m, &consumed) == 10 &&
+               consumed == expected_len && valid_sep(sep) && valid_tz_sign(tz_s)) {
         has_tz = true;
         tz_sign = (tz_s == '-') ? -1 : 1;
-    } else if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2dZ",
-                           &y, &m, &d, &sep, &h, &min, &s) == 7) {
-        has_time = true;
+    } else if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d%c%n",
+                           &y, &m, &d, &sep, &h, &min, &s, &z_char, &consumed) == 8 &&
+               consumed == expected_len && valid_sep(sep) && (z_char == 'Z' || z_char == 'z')) {
         has_tz = true;
         tz_sign = 1;
         tz_h = 0;
         tz_m = 0;
-    } else if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d",
-                           &y, &m, &d, &sep, &h, &min, &s) == 7) {
-        has_time = true;
+    } else if (std::sscanf(c_str, "%4d-%2d-%2d%c%2d:%2d:%2d%n",
+                           &y, &m, &d, &sep, &h, &min, &s, &consumed) == 7 &&
+               consumed == expected_len && valid_sep(sep)) {
         has_tz = false;
-    } else if (std::sscanf(c_str, "%4d-%2d-%2d", &y, &m, &d) == 3) {
-        has_time = false;
+    } else if (std::sscanf(c_str, "%4d-%2d-%2d%n", &y, &m, &d, &consumed) == 3 &&
+               consumed == expected_len) {
         has_tz = false;
     } else {
         return std::unexpected("Niepoprawny format ISO-8601: " + std::string(text));
     }
 
-    if (m < 1 || m > 12 || d < 1 || d > 31 || h < 0 || h > 23 || min < 0 || min > 59 || s < 0 || s > 60) {
+    if (m < 1 || m > 12 || d < 1 || d > days_in_month(y, m) ||
+        h < 0 || h > 23 || min < 0 || min > 59 || s < 0 || s > 60 ||
+        tz_h < 0 || tz_h > 23 || tz_m < 0 || tz_m > 59) {
         return std::unexpected("Niepoprawne wartosci liczbowe daty/czasu: " + std::string(text));
     }
 
@@ -251,6 +268,117 @@ std::expected<std::int64_t, std::string> parse_duration_delta(std::string_view t
     }
 
     return sign * total_seconds;
+}
+
+std::expected<ParsedPreset, std::string> parse_natural_preset(std::string_view expr,
+                                                              const TimePoint& now_ref) {
+    const std::string_view trimmed = trim(expr);
+    if (trimmed.empty()) {
+        return std::unexpected("Pusty preset daty");
+    }
+
+    const auto starts_with_ci = [](std::string_view str, std::string_view prefix) {
+        if (str.size() < prefix.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < prefix.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(str[i])) !=
+                std::tolower(static_cast<unsigned char>(prefix[i]))) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (trimmed.size() == 3 && starts_with_ci(trimmed, "now")) {
+        return ParsedPreset{
+            .relative_to_parent = false,
+            .parent_offset_sec = 0,
+            .absolute_time = now_ref
+        };
+    }
+
+    if (starts_with_ci(trimmed, "yesterday")) {
+        std::string_view rest = trimmed.substr(9);
+        if (!rest.empty() && !std::isspace(static_cast<unsigned char>(rest.front()))) {
+            return std::unexpected("Niepoprawna skladnia po 'yesterday': " + std::string(trimmed));
+        }
+
+        DateTimeCivil civil = to_civil(now_ref.timestamp - 86400, now_ref.tz_offset_min);
+        rest = trim(rest);
+        if (!rest.empty()) {
+            int h = 0, min = 0, s = 0, consumed = 0;
+            std::string rest_str(rest);
+            const int expected_len = static_cast<int>(rest_str.size());
+
+            if (std::sscanf(rest_str.c_str(), "%2d:%2d:%2d%n", &h, &min, &s, &consumed) == 3 &&
+                consumed == expected_len) {
+                // OK: HH:MM:SS
+            } else if (std::sscanf(rest_str.c_str(), "%2d:%2d%n", &h, &min, &consumed) == 2 &&
+                       consumed == expected_len) {
+                s = 0;
+            } else {
+                return std::unexpected("Oczekiwano godziny HH:MM lub HH:MM:SS po 'yesterday': " +
+                                       std::string(trimmed));
+            }
+
+            if (h < 0 || h > 23 || min < 0 || min > 59 || s < 0 || s > 60) {
+                return std::unexpected("Niepoprawna godzina w presecie 'yesterday': " +
+                                       std::string(trimmed));
+            }
+            civil.hour = h;
+            civil.minute = min;
+            civil.second = s;
+        }
+
+        return ParsedPreset{
+            .relative_to_parent = false,
+            .parent_offset_sec = 0,
+            .absolute_time = TimePoint{
+                .timestamp = from_civil(civil, now_ref.tz_offset_min),
+                .tz_offset_min = now_ref.tz_offset_min
+            }
+        };
+    }
+
+    if (starts_with_ci(trimmed, "parent")) {
+        std::string_view rest = trimmed.substr(6);
+        if (!rest.empty() && !std::isspace(static_cast<unsigned char>(rest.front())) &&
+            rest.front() != '+' && rest.front() != '-') {
+            return std::unexpected("Niepoprawna skladnia po 'parent': " + std::string(trimmed));
+        }
+
+        rest = trim(rest);
+        if (rest.empty()) {
+            return ParsedPreset{
+                .relative_to_parent = true,
+                .parent_offset_sec = 0,
+                .absolute_time = {}
+            };
+        }
+
+        const auto delta = parse_duration_delta(rest);
+        if (!delta) {
+            return std::unexpected(delta.error());
+        }
+
+        return ParsedPreset{
+            .relative_to_parent = true,
+            .parent_offset_sec = *delta,
+            .absolute_time = {}
+        };
+    }
+
+    const auto iso = parse_iso8601(trimmed);
+    if (!iso) {
+        return std::unexpected(iso.error());
+    }
+
+    return ParsedPreset{
+        .relative_to_parent = false,
+        .parent_offset_sec = 0,
+        .absolute_time = *iso
+    };
 }
 
 }  // namespace gitdatax::core
