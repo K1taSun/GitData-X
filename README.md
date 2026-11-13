@@ -23,8 +23,8 @@ Design invariants:
 Deterministic via `std::mt19937_64` with `DateTarget` (`AuthorOnly`, `CommitterOnly`, `Both`):
 
 | #   | Class                        | Mechanism                                                                                                                                                           |
-| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| 1   | `AbsolutePresetStrategy`     | Fixed ISO-8601 timestamp, natural presets (`now`, `yesterday HH:MM[:SS]`), or `parent [+                                                                            | - <delta>]`. |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `AbsolutePresetStrategy`     | Fixed ISO-8601 timestamp, natural presets (`now`, `yesterday HH:MM[:SS]`), or `parent + <delta>` / `parent - <delta>`.                                              |
 | 2   | `ConstantDeltaShiftStrategy` | Uniform shift (`+/- delta`); preserves exact inter-commit intervals.                                                                                                |
 | 3   | `RangeJitterStrategy`        | Linear interpolation over `[t_start, t_end]` with bounded jitter and strict monotonicity.                                                                           |
 | 4   | `WorkHoursStrategy`          | Clamps commits to workday window (default `09:00-17:00`, Mon-Fri) with day-overflow rollover.                                                                       |
