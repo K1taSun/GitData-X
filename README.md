@@ -67,3 +67,4 @@ Uruchomienie w bieżącym repozytorium lub ze wskazaniem ścieżki:
 - `src/core/` – model grafu `DagSnapshot`, sortowanie Kahna, algorytmy czasu, weryfikator niezmienników, silnik przepisywania.
 - `src/tui/` – interfejs terminalowy oparty na FTXUI.
 - `tests/` – testy jednostkowe i integracyjne (Catch2).
+

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <git2.h>
+#include <git2/sys/errors.h>
 
 #include "git/error.hpp"
 

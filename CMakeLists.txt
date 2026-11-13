@@ -18,7 +18,14 @@ if(GITDATAX_ENABLE_ASAN)
 endif()
 
 # Zależności instaluje vcpkg w trybie manifestu (vcpkg.json).
-find_package(unofficial-git2 CONFIG REQUIRED)
+# Nowszy port vcpkg eksportuje pakiet libgit2::libgit2package; starsze baseline'y używały unofficial-git2.
+find_package(libgit2 CONFIG QUIET)
+if(TARGET libgit2::libgit2package)
+    set(GITDATAX_LIBGIT2_TARGET libgit2::libgit2package)
+else()
+    find_package(unofficial-git2 CONFIG REQUIRED)
+    set(GITDATAX_LIBGIT2_TARGET unofficial::git2::libgit2package)
+endif()
 find_package(ftxui CONFIG REQUIRED)
 find_package(Catch2 3 CONFIG REQUIRED)
 find_package(RapidCheck CONFIG REQUIRED)
@@ -27,6 +34,7 @@ find_package(RapidCheck CONFIG REQUIRED)
 function(gitdatax_enable_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive-)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
     endif()
@@ -52,7 +60,7 @@ add_library(gitdatax_core STATIC
     src/git/transaction.cpp
 )
 target_include_directories(gitdatax_core PUBLIC src)
-target_link_libraries(gitdatax_core PUBLIC unofficial::git2::libgit2package)
+target_link_libraries(gitdatax_core PUBLIC ${GITDATAX_LIBGIT2_TARGET})
 gitdatax_enable_warnings(gitdatax_core)
 
 # --- gitdatax: plik wykonywalny z interfejsem TUI ---

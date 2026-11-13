@@ -1,6 +1,7 @@
 #include "git/graph_loader.hpp"
 
 #include <git2.h>
+#include <git2/sys/errors.h>
 
 #include <algorithm>
 #include <cstdint>

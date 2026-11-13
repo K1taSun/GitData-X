@@ -26,12 +26,33 @@ Oid create_blob_data(git_repository* repo, const std::string& data) {
     return Oid(oid);
 }
 
+Oid insert_path_into_tree(git_repository* repo, git_treebuilder* root_tb,
+                          const std::string& path, const Oid& blob) {
+    const auto slash = path.find('/');
+    if (slash == std::string::npos) {
+        REQUIRE(git_treebuilder_insert(nullptr, root_tb, path.c_str(), &blob.raw(), GIT_FILEMODE_BLOB) == 0);
+        return blob;
+    }
+
+    const std::string dir = path.substr(0, slash);
+    const std::string file = path.substr(slash + 1);
+    git_treebuilder* sub_tb = nullptr;
+    REQUIRE(git_treebuilder_new(&sub_tb, repo, nullptr) == 0);
+    REQUIRE(git_treebuilder_insert(nullptr, sub_tb, file.c_str(), &blob.raw(), GIT_FILEMODE_BLOB) == 0);
+    git_oid sub_oid{};
+    REQUIRE(git_treebuilder_write(&sub_oid, sub_tb) == 0);
+    git_treebuilder_free(sub_tb);
+
+    REQUIRE(git_treebuilder_insert(nullptr, root_tb, dir.c_str(), &sub_oid, GIT_FILEMODE_TREE) == 0);
+    return Oid(sub_oid);
+}
+
 Oid create_tree_two_files(git_repository* repo, const std::string& f1, const Oid& b1,
                           const std::string& f2, const Oid& b2) {
     git_treebuilder* tb = nullptr;
     REQUIRE(git_treebuilder_new(&tb, repo, nullptr) == 0);
-    REQUIRE(git_treebuilder_insert(nullptr, tb, f1.c_str(), &b1.raw(), 0100644) == 0);
-    REQUIRE(git_treebuilder_insert(nullptr, tb, f2.c_str(), &b2.raw(), 0100644) == 0);
+    insert_path_into_tree(repo, tb, f1, b1);
+    insert_path_into_tree(repo, tb, f2, b2);
     git_oid tree_oid{};
     REQUIRE(git_treebuilder_write(&tree_oid, tb) == 0);
     git_treebuilder_free(tb);

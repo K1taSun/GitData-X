@@ -1,6 +1,7 @@
 #include "core/time_strategies.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace gitdatax::core {
 
@@ -84,9 +85,12 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_delta_shi
     return result;
 }
 
-std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jitter(
+namespace {
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_range_jitter_impl(
     const std::vector<CommitTimeInput>& commits,
-    const RangeJitterConfig& config) {
+    const RangeJitterConfig& config,
+    std::mt19937_64& rng) {
     const std::size_t n = commits.size();
     if (n == 0) {
         return std::vector<CommitDatePair>{};
@@ -101,12 +105,10 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jit
             std::to_string(config.t_start + min_span) + ")");
     }
 
-    std::mt19937_64 rng(config.seed);
     std::vector<std::int64_t> generated_timestamps(n);
 
     if (n == 1) {
-        // Specyfikacja strona 7:
-        // Dla N = 1: t'0 = Tstart + eps_0, eps_0 ~ U(0, Tend - Tstart)
+        // Dla N = 1 unikamy dzielenia przez (N - 1) i losujemy punkt w [Tstart, Tend].
         const std::int64_t span = config.t_end - config.t_start;
         if (span == 0) {
             generated_timestamps[0] = config.t_start;
@@ -115,13 +117,10 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jit
             generated_timestamps[0] = config.t_start + dist(rng);
         }
     } else {
-        // Specyfikacja strona 7:
-        // Dla N > 1: t'i = Tstart + [ i / (N - 1) ] * (Tend - Tstart) + eps_i
-        // Gwarancja ścisłej monotoniczności: sigma < (Tend - Tstart) / [2(N - 1)]
+        // Dla N > 1 wymuszamy sigma < (Tend - Tstart) / [2(N - 1)] dla ścisłej monotoniczności.
         const std::int64_t total_span = config.t_end - config.t_start;
         const std::int64_t segments = static_cast<std::int64_t>(n - 1);
 
-        // Maksymalna dozwolona sigma wykluczająca nakładanie się przedziałów sasiednich punktów
         std::int64_t max_sigma = (total_span / (2 * segments)) - 1;
         if (max_sigma < 0) {
             max_sigma = 0;
@@ -140,18 +139,15 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jit
             generated_timestamps[i] = base + jitter;
         }
 
-        // Zapewnienie t'0 >= Tstart oraz t'_{N-1} <= Tend
         generated_timestamps.front() = std::max(generated_timestamps.front(), config.t_start);
         generated_timestamps.back() = std::min(generated_timestamps.back(), config.t_end);
 
-        // Wymuszenie ścisłej monotoniczności: t'_i >= t'_{i-1} + 1
         for (std::size_t i = 1; i < n; ++i) {
             if (generated_timestamps[i] <= generated_timestamps[i - 1]) {
                 generated_timestamps[i] = generated_timestamps[i - 1] + 1;
             }
         }
 
-        // Korekta wsteczna na wypadek przekroczenia Tend
         if (generated_timestamps.back() > config.t_end) {
             generated_timestamps.back() = config.t_end;
             for (std::size_t i = n - 1; i > 0; --i) {
@@ -180,6 +176,15 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jit
     }
 
     return result;
+}
+
+}  // namespace
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_range_jitter(
+    const std::vector<CommitTimeInput>& commits,
+    const RangeJitterConfig& config) {
+    std::mt19937_64 rng(config.seed);
+    return apply_range_jitter_impl(commits, config, rng);
 }
 
 namespace {
@@ -267,11 +272,10 @@ std::int64_t clamp_to_work_window(std::int64_t ts, int tz_offset_min, int start_
     return ts;
 }
 
-}  // namespace
-
-std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hours(
+std::expected<std::vector<CommitDatePair>, std::string> apply_work_hours_impl(
     const std::vector<CommitTimeInput>& commits,
-    const WorkHoursConfig& config) {
+    const WorkHoursConfig& config,
+    std::mt19937_64& rng) {
     if (commits.empty()) {
         return std::vector<CommitDatePair>{};
     }
@@ -285,7 +289,7 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hour
         return std::unexpected("Niepoprawny zakres kroku delta (step_min_sec > 0 oraz step_max_sec >= step_min_sec)");
     }
 
-    std::mt19937_64 rng(config.seed);
+    const std::int64_t window_len_sec = static_cast<std::int64_t>(end_min - start_min) * 60;
     std::uniform_int_distribution<std::int64_t> step_dist(config.step_min_sec, config.step_max_sec);
 
     std::vector<CommitDatePair> result;
@@ -301,31 +305,51 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hour
         const int tz = orig_tp.tz_offset_min;
 
         if (i == 0) {
-            // Pierwszy commit rzutujemy do okna roboczego
             current_cursor = clamp_to_work_window(orig_tp.timestamp, tz,
                                                   config.start_hour, config.start_minute,
                                                   config.end_hour, config.end_minute);
         } else {
             const std::int64_t step = step_dist(rng);
 
-            // Jeśli oryginalny commit jest znacznie późniejszy niż bieżący kursor,
-            // próbujemy zachować naturalny postęp czasu, o ile mieści się w oknie.
             if (orig_tp.timestamp > current_cursor + step) {
                 current_cursor = clamp_to_work_window(orig_tp.timestamp, tz,
                                                       config.start_hour, config.start_minute,
                                                       config.end_hour, config.end_minute);
             } else {
-                current_cursor += step;
-            }
+                // Jeśli poprzedni commit był w innej strefie czasowej i poza jej oknem,
+                // najpierw rzutujemy kursor do bieżącego okna roboczego.
+                DateTimeCivil prev_civil = to_civil(current_cursor, tz);
+                if (!is_within_work_window(prev_civil, start_min, end_min)) {
+                    current_cursor = clamp_to_work_window(current_cursor, tz,
+                                                          config.start_hour, config.start_minute,
+                                                          config.end_hour, config.end_minute);
+                    prev_civil = to_civil(current_cursor, tz);
+                }
 
-            // Day Overflow Protection: sprawdzamy czy przekroczyliśmy godzinę końcową dnia
-            DateTimeCivil civil = to_civil(current_cursor, tz);
-            if (!is_within_work_window(civil, start_min, end_min)) {
-                // Przekroczenie okna roboczego: przenosimy na poranek kolejnego dnia roboczego
-                const std::int64_t next_start = next_work_day_start(civil, config.start_hour, config.start_minute, tz);
-                // Losowy mały offset w poranku nowego dnia
-                const std::int64_t morning_offset = (step % (15 * 60)); // max 15 minut po otwarciu
-                current_cursor = next_start + morning_offset;
+                DateTimeCivil day_end_civil = prev_civil;
+                day_end_civil.hour = config.end_hour;
+                day_end_civil.minute = config.end_minute;
+                day_end_civil.second = 0;
+                const std::int64_t day_end_ts = from_civil(day_end_civil, tz);
+
+                const std::int64_t candidate = current_cursor + step;
+                if (candidate >= day_end_ts) {
+                    // Przepełnienie dnia (Day Overflow): dokładny nadmiar poza koniec okna
+                    // przenosimy na poranek kolejnego dnia roboczego (zawijając przy dużych krokach).
+                    std::int64_t excess = candidate - day_end_ts;
+                    DateTimeCivil overflow_civil = prev_civil;
+                    while (excess >= window_len_sec) {
+                        excess -= window_len_sec;
+                        const std::int64_t skipped_start = next_work_day_start(
+                            overflow_civil, config.start_hour, config.start_minute, tz);
+                        overflow_civil = to_civil(skipped_start, tz);
+                    }
+                    const std::int64_t next_start = next_work_day_start(
+                        overflow_civil, config.start_hour, config.start_minute, tz);
+                    current_cursor = next_start + excess;
+                } else {
+                    current_cursor = candidate;
+                }
             }
         }
 
@@ -336,6 +360,15 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hour
     }
 
     return result;
+}
+
+}  // namespace
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_work_hours(
+    const std::vector<CommitTimeInput>& commits,
+    const WorkHoursConfig& config) {
+    std::mt19937_64 rng(config.seed);
+    return apply_work_hours_impl(commits, config, rng);
 }
 
 std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_sync_and_heal(
@@ -389,15 +422,24 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_sync_and_
         }
 
         // 3. Synchronizacja par sygnatur
+        if (config.sync_mode == SignatureSyncMode::CommitterToAuthor) {
+            pair.committer = pair.author;
+        } else if (config.sync_mode == SignatureSyncMode::AuthorToCommitter) {
+            pair.author = pair.committer;
+        }
+
         result.push_back(pair);
     }
 
     return result;
 }
 
-std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise_random_to_target(
+namespace {
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_piecewise_random_impl(
     const std::vector<CommitTimeInput>& commits,
-    const PiecewiseRandomConfig& config) {
+    const PiecewiseRandomConfig& config,
+    std::mt19937_64& rng) {
     const std::size_t n = commits.size();
     if (n == 0) {
         return std::vector<CommitDatePair>{};
@@ -410,13 +452,30 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise
     std::vector<TimeSegment> segments;
 
     if (!config.explicit_segments.empty()) {
+        for (const auto& seg : config.explicit_segments) {
+            if (seg.start_index > n || seg.count > n - seg.start_index) {
+                return std::unexpected("Indeksy jawnie podanego odcinka wykraczaja poza rozmiar listy commitow");
+            }
+        }
         segments = config.explicit_segments;
     } else {
-        // 1. Wyznaczenie punktów podziału na odcinki (manualne + progowe)
+        // 1. Wyznaczenie punktów podziału na odcinki (manualne, dzienne oraz wg progu sesji)
         std::vector<std::size_t> break_indices;
         for (const std::size_t b : config.manual_break_indices) {
             if (b > 0 && b < n) {
                 break_indices.push_back(b);
+            }
+        }
+
+        if (config.split_by_day) {
+            for (std::size_t i = 1; i < n; ++i) {
+                const int prev_tz = config.new_tz_offset_min.value_or(commits[i - 1].dates.committer.tz_offset_min);
+                const int cur_tz = config.new_tz_offset_min.value_or(commits[i].dates.committer.tz_offset_min);
+                const DateTimeCivil prev_day = to_civil(commits[i - 1].dates.committer.timestamp, prev_tz);
+                const DateTimeCivil cur_day = to_civil(commits[i].dates.committer.timestamp, cur_tz);
+                if (prev_day.year != cur_day.year || prev_day.month != cur_day.month || prev_day.day != cur_day.day) {
+                    break_indices.push_back(i);
+                }
             }
         }
 
@@ -485,7 +544,6 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise
         }
     }
 
-    std::mt19937_64 rng(config.seed);
     std::uniform_real_distribution<double> step_dist(static_cast<double>(config.delta_min_sec),
                                                      static_cast<double>(config.delta_max_sec));
 
@@ -561,6 +619,88 @@ std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise
     }
 
     return result;
+}
+
+}  // namespace
+
+std::expected<std::vector<CommitDatePair>, std::string> apply_strategy_piecewise_random_to_target(
+    const std::vector<CommitTimeInput>& commits,
+    const PiecewiseRandomConfig& config) {
+    std::mt19937_64 rng(config.seed);
+    return apply_piecewise_random_impl(commits, config, rng);
+}
+
+AbsolutePresetStrategy::AbsolutePresetStrategy(const TimePoint& new_time)
+    : preset_{.relative_to_parent = false, .parent_offset_sec = 0, .absolute_time = new_time} {}
+
+AbsolutePresetStrategy::AbsolutePresetStrategy(const ParsedPreset& preset)
+    : preset_(preset) {}
+
+std::expected<std::vector<CommitDatePair>, std::string> AbsolutePresetStrategy::apply(
+    const std::vector<CommitTimeInput>& commits,
+    [[maybe_unused]] std::mt19937_64& rng,
+    TimeTargetFlag target) const {
+    const DateTarget mapped_target = to_date_target(target);
+    if (preset_.relative_to_parent) {
+        return apply_strategy_parent_relative(commits, preset_.parent_offset_sec, mapped_target);
+    }
+    return apply_strategy_absolute(commits, preset_.absolute_time, mapped_target);
+}
+
+ConstantDeltaShiftStrategy::ConstantDeltaShiftStrategy(std::int64_t delta_seconds)
+    : delta_seconds_(delta_seconds) {}
+
+std::expected<std::vector<CommitDatePair>, std::string> ConstantDeltaShiftStrategy::apply(
+    const std::vector<CommitTimeInput>& commits,
+    [[maybe_unused]] std::mt19937_64& rng,
+    TimeTargetFlag target) const {
+    return apply_strategy_delta_shift(commits, delta_seconds_, to_date_target(target));
+}
+
+RangeJitterStrategy::RangeJitterStrategy(RangeJitterConfig config)
+    : config_(std::move(config)) {}
+
+std::expected<std::vector<CommitDatePair>, std::string> RangeJitterStrategy::apply(
+    const std::vector<CommitTimeInput>& commits,
+    std::mt19937_64& rng,
+    TimeTargetFlag target) const {
+    RangeJitterConfig cfg = config_;
+    cfg.target = to_date_target(target);
+    return apply_range_jitter_impl(commits, cfg, rng);
+}
+
+WorkHoursStrategy::WorkHoursStrategy(WorkHoursConfig config)
+    : config_(std::move(config)) {}
+
+std::expected<std::vector<CommitDatePair>, std::string> WorkHoursStrategy::apply(
+    const std::vector<CommitTimeInput>& commits,
+    std::mt19937_64& rng,
+    TimeTargetFlag target) const {
+    WorkHoursConfig cfg = config_;
+    cfg.target = to_date_target(target);
+    return apply_work_hours_impl(commits, cfg, rng);
+}
+
+SyncAndHealStrategy::SyncAndHealStrategy(Strategy5Config config)
+    : config_(std::move(config)) {}
+
+std::expected<std::vector<CommitDatePair>, std::string> SyncAndHealStrategy::apply(
+    const std::vector<CommitTimeInput>& commits,
+    [[maybe_unused]] std::mt19937_64& rng,
+    [[maybe_unused]] TimeTargetFlag target) const {
+    return apply_strategy_sync_and_heal(commits, config_);
+}
+
+PiecewiseRandomStrategy::PiecewiseRandomStrategy(PiecewiseRandomConfig config)
+    : config_(std::move(config)) {}
+
+std::expected<std::vector<CommitDatePair>, std::string> PiecewiseRandomStrategy::apply(
+    const std::vector<CommitTimeInput>& commits,
+    std::mt19937_64& rng,
+    TimeTargetFlag target) const {
+    PiecewiseRandomConfig cfg = config_;
+    cfg.target = to_date_target(target);
+    return apply_piecewise_random_impl(commits, cfg, rng);
 }
 
 }  // namespace gitdatax::core

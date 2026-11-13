@@ -128,3 +128,62 @@ TEST_CASE("Sposob 4: Walidacja niepoprawnej konfiguracji", "[core][time_strategy
     REQUIRE_FALSE(apply_strategy_work_hours({make_commit_at(2026, 11, 11, 12, 0)}, bad_step).has_value());
 }
 
+TEST_CASE("Sposob 4: Przeniesienie dokladnego nadmiaru dnia (Day Overflow Excess)", "[core][time_strategy][work_hours]") {
+    // Piątek 2026-11-13 16:45 -> +30 min daje 17:15 -> nadmiar 15 min po 17:00 trafia na poniedziałek 09:15!
+    const std::vector<CommitTimeInput> commits = {
+        make_commit_at(2026, 11, 13, 16, 45, 0, 60),
+        make_commit_at(2026, 11, 13, 16, 50, 0, 60)
+    };
+
+    const WorkHoursStrategy strategy(WorkHoursConfig{
+        .start_hour = 9,
+        .start_minute = 0,
+        .end_hour = 17,
+        .end_minute = 0,
+        .step_min_sec = 30 * 60,
+        .step_max_sec = 30 * 60,
+        .seed = 100
+    });
+    const ITimeStrategy& iface = strategy;
+    std::mt19937_64 rng(100);
+
+    const auto res = iface.apply(commits, rng, TimeTargetFlag::ModifyAuthor);
+    REQUIRE(res.has_value());
+    REQUIRE(res->size() == 2);
+
+    const auto c1 = to_civil((*res)[1].author.timestamp, 60);
+    REQUIRE(c1.year == 2026);
+    REQUIRE(c1.month == 11);
+    REQUIRE(c1.day == 16); // Poniedziałek
+    REQUIRE(c1.hour == 9);
+    REQUIRE(c1.minute == 15);
+    // Committer pozostał nietknięty przy fladze ModifyAuthor
+    REQUIRE((*res)[1].committer == commits[1].dates.committer);
+}
+
+TEST_CASE("Sposob 4: Przejscie przez 29 lutego w roku przestepnym", "[core][time_strategy][work_hours]") {
+    // 2024-02-28 to środa, 2024-02-29 to czwartek, 2024-03-01 to piątek.
+    const std::vector<CommitTimeInput> commits = {
+        make_commit_at(2024, 2, 28, 16, 50, 0, 60),
+        make_commit_at(2024, 2, 28, 16, 55, 0, 60)
+    };
+
+    WorkHoursConfig cfg{
+        .start_hour = 9,
+        .start_minute = 0,
+        .end_hour = 17,
+        .end_minute = 0,
+        .step_min_sec = 20 * 60,
+        .step_max_sec = 20 * 60
+    };
+
+    const auto res = apply_strategy_work_hours(commits, cfg);
+    REQUIRE(res.has_value());
+    const auto c1 = to_civil((*res)[1].committer.timestamp, 60);
+    REQUIRE(c1.year == 2024);
+    REQUIRE(c1.month == 2);
+    REQUIRE(c1.day == 29);
+    REQUIRE(c1.hour == 9);
+    REQUIRE(c1.minute == 10);
+}
+
