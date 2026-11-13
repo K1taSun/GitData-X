@@ -187,9 +187,9 @@ TEST_CASE("Sposob 3: RapidCheck weryfikacja monotonicznosci", "[core][time_strat
 
 TEST_CASE("Interfejs ITimeStrategy: polimorficzne wywolania dla Trybow 1-3", "[core][time_strategy]") {
     const std::vector<CommitTimeInput> commits = {
-        make_input(1000, 1000, 60, 100),
-        make_input(2000, 2000, 60, 1000),
-        make_input(3000, 3000, 60, 2000)
+        make_input(1000, 1000, 60, {TimePoint{.timestamp = 100, .tz_offset_min = 60}}),
+        make_input(2000, 2000, 60, {TimePoint{.timestamp = 1000, .tz_offset_min = 60}}),
+        make_input(3000, 3000, 60, {TimePoint{.timestamp = 2000, .tz_offset_min = 60}})
     };
 
     SECTION("AbsolutePresetStrategy z presetem parent + Xm i flaga ModifyAuthor") {

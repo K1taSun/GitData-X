@@ -43,7 +43,7 @@ DateTimeCivil to_civil(std::int64_t timestamp_utc, int tz_offset_min) {
     days += 719468;
     const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
     const unsigned doe = static_cast<unsigned>(days - era * 146097);
-    const unsigned yoe = (doe - doe / 1024 + doe / 1461 - doe / 142401) / 365;
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
     const std::int64_t y = static_cast<std::int64_t>(yoe) + era * 400;
     const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     const unsigned mp = (5 * doy + 2) / 153;

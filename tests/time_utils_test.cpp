@@ -4,12 +4,14 @@
 #include "core/time_utils.hpp"
 
 using gitdatax::core::DateTimeCivil;
+using gitdatax::core::days_in_month;
 using gitdatax::core::from_civil;
 using gitdatax::core::format_iso8601;
 using gitdatax::core::is_leap_year;
 using gitdatax::core::is_weekend;
 using gitdatax::core::parse_duration_delta;
 using gitdatax::core::parse_iso8601;
+using gitdatax::core::parse_natural_preset;
 using gitdatax::core::TimePoint;
 using gitdatax::core::to_civil;
 

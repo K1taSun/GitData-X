@@ -131,8 +131,8 @@ TEST_CASE("Sposob 4: Walidacja niepoprawnej konfiguracji", "[core][time_strategy
 TEST_CASE("Sposob 4: Przeniesienie dokladnego nadmiaru dnia (Day Overflow Excess)", "[core][time_strategy][work_hours]") {
     // Piątek 2026-11-13 16:45 -> +30 min daje 17:15 -> nadmiar 15 min po 17:00 trafia na poniedziałek 09:15!
     const std::vector<CommitTimeInput> commits = {
-        make_commit_at(2026, 11, 13, 16, 45, 60),
-        make_commit_at(2026, 11, 13, 16, 50, 60)
+        make_commit_at(2026, 11, 13, 16, 45, 0, 60),
+        make_commit_at(2026, 11, 13, 16, 50, 0, 60)
     };
 
     const WorkHoursStrategy strategy(WorkHoursConfig{
@@ -164,8 +164,8 @@ TEST_CASE("Sposob 4: Przeniesienie dokladnego nadmiaru dnia (Day Overflow Excess
 TEST_CASE("Sposob 4: Przejscie przez 29 lutego w roku przestepnym", "[core][time_strategy][work_hours]") {
     // 2024-02-28 to środa, 2024-02-29 to czwartek, 2024-03-01 to piątek.
     const std::vector<CommitTimeInput> commits = {
-        make_commit_at(2024, 2, 28, 16, 50, 60),
-        make_commit_at(2024, 2, 28, 16, 55, 60)
+        make_commit_at(2024, 2, 28, 16, 50, 0, 60),
+        make_commit_at(2024, 2, 28, 16, 55, 0, 60)
     };
 
     WorkHoursConfig cfg{
