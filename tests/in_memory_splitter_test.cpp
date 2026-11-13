@@ -21,7 +21,7 @@ Oid create_blob(git_repository* repo, const std::string& content) {
 Oid create_tree_with_entry(git_repository* repo, const std::string& filename, const Oid& blob_oid) {
     git_treebuilder* tb = nullptr;
     REQUIRE(git_treebuilder_new(&tb, repo, nullptr) == 0);
-    REQUIRE(git_treebuilder_insert(nullptr, tb, filename.c_str(), &blob_oid.raw(), 0100644) == 0);
+    REQUIRE(git_treebuilder_insert(nullptr, tb, filename.c_str(), &blob_oid.raw(), GIT_FILEMODE_BLOB) == 0);
     git_oid tree_oid{};
     REQUIRE(git_treebuilder_write(&tree_oid, tb) == 0);
     git_treebuilder_free(tb);

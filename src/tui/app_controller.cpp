@@ -210,7 +210,7 @@ int AppController::run(std::optional<std::filesystem::path> repo_path) {
                 if (auto new_dag = git::load_dag_snapshot(repo)) {
                     *dag = std::move(*new_dag);
                     sorted_commits = dag->topological_sort_oldest_first().value_or(std::vector<git::Oid>{});
-                    *planner = core::RewritePlanner(*dag);
+                    planner = std::make_unique<core::RewritePlanner>(*dag);
                 }
             } else {
                 status_notification = "Blad zapisu: " + report.error().message;
@@ -227,7 +227,7 @@ int AppController::run(std::optional<std::filesystem::path> repo_path) {
                 if (auto new_dag = git::load_dag_snapshot(repo)) {
                     *dag = std::move(*new_dag);
                     sorted_commits = dag->topological_sort_oldest_first().value_or(std::vector<git::Oid>{});
-                    *planner = core::RewritePlanner(*dag);
+                    planner = std::make_unique<core::RewritePlanner>(*dag);
                 }
             } else {
                 status_notification = "Blad Undo: " + undo_res.error().message;

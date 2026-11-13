@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <git2.h>
+#include <git2/sys/commit.h>
 
 #include "core/backup_manager.hpp"
 #include "git/error.hpp"

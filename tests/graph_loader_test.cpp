@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <git2.h>
+#include <git2/sys/commit.h>
 
 #include <filesystem>
 #include <optional>
